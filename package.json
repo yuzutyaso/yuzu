@@ -1,0 +1,32 @@
+{
+  "name": "わかめtube",
+  "version": "2.6.8",
+  "main": "server.js",
+  "license": "CC-BY-4.0",
+  "dependencies": {
+    "ejs": "^3.1.10",
+    "express": "^4.17.1",
+    "axios": "^1.7.7",
+    "cors": "latest",
+    "jsonpath": "^1.0.0",
+    "compression": "^1.7.4"
+  },
+  "description": "わかめ",
+  "engines": {
+    "node": "16.x"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://glitch.com/~watawata"
+  },
+  "author": "wakame",
+  "private": false,
+  "devDependencies": {},
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "和布"
+  ]
+}
