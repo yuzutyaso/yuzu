@@ -1,4 +1,4 @@
 Flask
 yt-dlp
-ytpl
+youtube-playlist-parser 
 ytsr
