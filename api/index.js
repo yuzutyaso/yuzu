@@ -2,146 +2,118 @@
 "use strict";
 const express = require("express");
 const compression = require("compression");
-const axios = require('axios');
-const bodyParser = require('body-parser');
 const cors = require('cors');
+const bodyParser = require('body-parser');
+const ytdl = require('ytdl-core'); // ytdl-coreをインポート
 
 let app = express();
 
-// Apply middleware
+// ミドルウェアの適用
 app.use(compression());
 app.use(bodyParser.json());
 app.use(cors());
 
-let apis = null;
-const MAX_API_WAIT_TIME = 3000;
-const MAX_TIME = 10000;
-
-// Function to fetch APIs - made more robust for Vercel's stateless nature
-async function getapis() {
-    try {
-        // You might want to cache this response more aggressively in a real app,
-        // but for a simple demo, re-fetching is fine.
-        const response = await axios.get('https://wtserver.glitch.me/apis');
-        apis = response.data;
-        console.log('データを取得しました:', apis);
-    } catch (error) {
-        console.error('データの取得に失敗しました:', error);
-        apis = null; // Ensure apis is null on failure
-    }
-}
-
-// Initial fetch when the function starts (can be infrequent on Vercel)
-// In a serverless environment, this might run on each cold start.
-// For better performance, consider a persistent caching mechanism if 'apis' changes infrequently.
-getapis();
-
-async function ggvideo(videoId) {
-  const startTime = Date.now();
-  const instanceErrors = new Set();
-
-  // Ensure apis are available, fetch if not
-  if (!apis) {
-    await getapis();
-    if (!apis) {
-        throw new Error("APIリストの取得に失敗しました。");
-    }
-  }
-
-  // Shuffle apis to distribute load and try different ones
-  const shuffledApis = [...apis].sort(() => 0.5 - Math.random());
-
-  for (const instance of shuffledApis) {
-    try {
-      const response = await axios.get(`${instance}/api/v1/videos/${videoId}`, { timeout: MAX_API_WAIT_TIME });
-      console.log(`使ってみたURL: ${instance}/api/v1/videos/${videoId}`);
-
-      if (response.data && response.data.formatStreams) {
-        return response.data;
-      } else {
-        console.error(`formatStreamsが存在しない: ${instance}`);
-      }
-    } catch (error) {
-      console.error(`エラーだよ: ${instance} - ${error.message}`);
-      instanceErrors.add(instance);
-    }
-
-    if (Date.now() - startTime >= MAX_TIME) {
-      throw new Error("接続がタイムアウトしました");
-    }
-  }
-
-  throw new Error("動画を取得する方法が見つかりません");
-}
-
-// Routes
+// ルート定義
 app.get('/', (req, res) => {
+    // Vercelがヘルスチェックに使うため、200 OKを返す
     res.sendStatus(200);
 });
 
-app.get('/data', (req, res) => {
-    if (apis) {
-        res.json(apis);
-    } else {
-        res.status(500).send('データを取得できていません');
-    }
-});
-
-app.get('/refresh', async (req, res) => {
-    await getapis();
-    res.sendStatus(200);
-});
-
+// /api/:id または /api/login/:id で動画情報を取得
 app.get(['/api/:id', '/api/login/:id'], async (req, res) => {
-  const videoId = req.params.id;
-  try {
-    const videoInfo = await ggvideo(videoId);
+    const videoId = req.params.id;
 
-    // Prioritize high quality streams, then fall back to others
-    const formatStreams = videoInfo.formatStreams || [];
-    const streamUrl = formatStreams.reverse().map(stream => stream.url)[0]; // Simplistic, might need more robust logic
+    // YouTube動画IDの基本的なバリデーション
+    if (!ytdl.validateID(videoId)) {
+        return res.status(400).json({
+            error: '無効なYouTube動画IDです。',
+            details: '動画IDは11文字の英数字である必要があります。'
+        });
+    }
 
-    const adaptiveFormats = videoInfo.adaptiveFormats || [];
+    try {
+        // ytdl-coreで動画情報を取得
+        const info = await ytdl.getInfo(videoId);
 
-    let highstreamUrl = adaptiveFormats
-      .filter(stream => stream.container === 'webm' && stream.resolution === '1080p')
-      .map(stream => stream.url)[0] || ''; // Ensure it's not undefined
+        // 必要に応じて、動画と音声のストリームをフィルタリング
+        // ここでは、動画のみの高品質なストリームと、音声のみのストリームを取得する例
+        const formatStreams = ytdl.filterFormats(info.formats, 'videoonly');
+        const audioStreams = ytdl.filterFormats(info.formats, 'audioonly');
 
-    const audioUrl = adaptiveFormats
-      .filter(stream => stream.container === 'm4a' && stream.audioQuality === 'AUDIO_QUALITY_MEDIUM')
-      .map(stream => stream.url)[0] || ''; // Ensure it's not undefined
+        // ストリームURLの選択ロジックを調整
+        // 高品質な動画ストリーム（例: 1080p WebM）
+        const highResVideoFormat = formatStreams.find(f =>
+            f.qualityLabel === '1080p' && f.container === 'webm' && f.hasVideo && !f.hasAudio
+        );
+        const highstreamUrl = highResVideoFormat ? highResVideoFormat.url : null;
 
-    const streamUrls = adaptiveFormats
-      .filter(stream => stream.container === 'webm' && stream.resolution)
-      .map(stream => ({
-        url: stream.url,
-        resolution: stream.resolution,
-      }));
+        // 利用可能な最も高い解像度のストリーム（動画+音声）
+        // ytdl-coreは通常、結合されたストリームは提供しないので、動画のみを選ぶ
+        const combinedStreamUrl = ytdl.chooseFormat(info.formats, { quality: 'highestvideo' }).url;
 
-    const templateData = {
-      stream_url: streamUrl,
-      highstreamUrl: highstreamUrl,
-      audioUrl: audioUrl,
-      videoId: videoId,
-      channelId: videoInfo.authorId,
-      channelName: videoInfo.author,
-      channelImage: videoInfo.authorThumbnails?.[videoInfo.authorThumbnails.length - 1]?.url || '',
-      videoTitle: videoInfo.title,
-      videoDes: videoInfo.descriptionHtml,
-      videoViews: videoInfo.viewCount,
-      likeCount: videoInfo.likeCount,
-      streamUrls: streamUrls
-    };
 
-    res.json(templateData);
-  } catch (error) {
-        console.error(`動画情報取得エラー: ${error.message}`);
+        // 音声ストリーム（例: m4a）
+        const audioFormat = audioStreams.find(f => f.container === 'm4a' && f.audioQuality === 'AUDIO_QUALITY_MEDIUM');
+        const audioUrl = audioFormat ? audioFormat.url : null;
+
+        // 利用可能な全ストリーム情報 (フロントエンドの品質選択用)
+        const availableStreamUrls = info.formats
+            .filter(f => f.hasVideo && f.hasAudio && f.qualityLabel) // 動画と音声があり、品質ラベルがあるもの
+            .sort((a, b) => parseInt(b.qualityLabel) - parseInt(a.qualityLabel)) // 解像度で降順ソート
+            .map(f => ({
+                url: f.url,
+                resolution: f.qualityLabel,
+                container: f.container
+            }));
+
+        // 動画のみのストリーム（解像度選択用）
+        const videoOnlyStreamUrls = formatStreams
+            .filter(f => f.qualityLabel && f.hasVideo && !f.hasAudio)
+            .sort((a, b) => parseInt(b.qualityLabel) - parseInt(a.qualityLabel))
+            .map(f => ({
+                url: f.url,
+                resolution: f.qualityLabel,
+                container: f.container
+            }));
+
+        const templateData = {
+            // 基本的にはcombinedStreamUrlをデフォルトとするが、
+            // フロントエンドで動画+音声の品質選択を実装するならその選択肢も提示
+            stream_url: combinedStreamUrl, // 結合されたストリーム (通常、最高品質の動画ストリームを選ぶことが多い)
+            highstreamUrl: highstreamUrl, // 1080pの動画のみストリーム
+            audioUrl: audioUrl,           // 音声のみストリーム
+            videoId: videoId,
+            channelId: info.videoDetails.ownerProfileUrl ? info.videoDetails.ownerProfileUrl.split('/').pop() : '',
+            channelName: info.videoDetails.ownerChannelName,
+            channelImage: info.videoDetails.author.thumbnails?.[info.videoDetails.author.thumbnails.length - 1]?.url || '',
+            videoTitle: info.videoDetails.title,
+            videoDes: info.videoDetails.description, // HTML形式ではない可能性があるので注意
+            videoViews: info.videoDetails.viewCount,
+            likeCount: info.videoDetails.likes,
+            streamUrls: availableStreamUrls, // 動画+音声の全ストリーム（品質選択用）
+            videoOnlyStreamUrls: videoOnlyStreamUrls // 動画のみの全ストリーム（品質選択用）
+        };
+
+        res.json(templateData);
+
+    } catch (error) {
+        console.error(`動画情報取得エラー (${videoId}):`, error.message);
+        let errorMessage = '動画情報を取得できませんでした。';
+        if (error.message.includes('No video formats found')) {
+            errorMessage = 'この動画は利用できないか、再生できない形式です。';
+        } else if (error.message.includes('private')) {
+            errorMessage = 'この動画はプライベート設定です。';
+        } else if (error.message.includes('unavailable')) {
+            errorMessage = 'この動画は利用できません。';
+        } else if (error.message.includes('not found')) {
+             errorMessage = '指定された動画IDの動画は見つかりませんでした。';
+        }
         res.status(500).json({
-            error: '動画を取得できません',
+            error: errorMessage,
             details: error.message
         });
-  }
+    }
 });
 
-// Export the app for Vercel
+// VercelでExpressアプリをエクスポート
 module.exports = app;
