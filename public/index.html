@@ -18,13 +18,15 @@
         .stream-quality-selector { margin-top: 10px; }
         .stream-quality-selector button { margin-right: 5px; background-color: #6c757d; }
         .stream-quality-selector button.active { background-color: #28a745; }
+        /* チャンネル画像のスタイルを調整 */
+        #channel-image { vertical-align: middle; margin-right: 10px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>簡易YouTube</h1>
         <p>YouTubeの動画URLを貼り付けてください:</p>
-        <input type="text" id="youtube-url" placeholder="例: https://www.youtube.com/watch?v=dQw4w9WgXcQ">
+        <input type="text" id="youtube-url" placeholder="例: www.youtube.com">
         <button id="load-video">動画を読み込む</button>
 
         <div id="error-message"></div>
@@ -36,12 +38,14 @@
 
         <div id="video-info">
             <h2 id="video-title"></h2>
-            <p><strong>チャンネル:</strong> <span id="channel-name"></span></p>
+            <p>
+                <img id="channel-image" src="" alt="チャンネル画像" style="width: 50px; height: 50px; border-radius: 50%; display: none;">
+                <strong>チャンネル:</strong> <span id="channel-name"></span>
+            </p>
             <p><strong>視聴回数:</strong> <span id="video-views"></span></p>
             <p><strong>高評価数:</strong> <span id="like-count"></span></p>
             <h3>概要:</h3>
             <div id="video-description"></div>
-            <img id="channel-image" src="" alt="チャンネル画像" style="width: 50px; height: 50px; border-radius: 50%; margin-top: 10px; display: none;">
         </div>
     </div>
 
