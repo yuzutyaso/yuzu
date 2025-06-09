@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>簡易YouTube</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f0f0f0; }
+        .container { max-width: 800px; margin: auto; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        input[type="text"] { width: calc(100% - 100px); padding: 10px; margin-right: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        button { padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        #video-player { margin-top: 20px; text-align: center; }
+        #video-player video { width: 100%; max-width: 720px; height: auto; background-color: black; }
+        #video-info { margin-top: 15px; text-align: left; }
+        #video-info h2 { margin-bottom: 5px; }
+        #error-message { color: red; margin-top: 10px; }
+        .stream-quality-selector { margin-top: 10px; }
+        .stream-quality-selector button { margin-right: 5px; background-color: #6c757d; }
+        .stream-quality-selector button.active { background-color: #28a745; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>簡易YouTube</h1>
+        <p>YouTubeの動画URLを貼り付けてください:</p>
+        <input type="text" id="youtube-url" placeholder="例: https://www.youtube.com/watch?v=dQw4w9WgXcQ">
+        <button id="load-video">動画を読み込む</button>
+
+        <div id="error-message"></div>
+
+        <div id="video-player">
+            <video id="video-element" controls autoplay></video>
+            <div class="stream-quality-selector" id="quality-selector"></div>
+        </div>
+
+        <div id="video-info">
+            <h2 id="video-title"></h2>
+            <p><strong>チャンネル:</strong> <span id="channel-name"></span></p>
+            <p><strong>視聴回数:</strong> <span id="video-views"></span></p>
+            <p><strong>高評価数:</strong> <span id="like-count"></span></p>
+            <h3>概要:</h3>
+            <div id="video-description"></div>
+            <img id="channel-image" src="" alt="チャンネル画像" style="width: 50px; height: 50px; border-radius: 50%; margin-top: 10px; display: none;">
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
