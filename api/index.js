@@ -1,65 +1,63 @@
+// api/index.js
 "use strict";
 const express = require("express");
-let app = express();
-const cluster = require("cluster");
-const os = require("os");
 const compression = require("compression");
-const numClusters = os.cpus().length;
-if (cluster.isMaster) {
-  for (let i = 0; i < numClusters; i++) {
-    cluster.fork();
-  }
-  cluster.on("exit", (worker, code, signal) => {
-    cluster.fork();
-  });
-} else {
-  app.use(compression());
-  app.listen(3000, () => {
-    console.log(`Worker ${process.pid} started`);
-  });
-}
-
 const axios = require('axios');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 
+let app = express();
+
+// Apply middleware
+app.use(compression());
 app.use(bodyParser.json());
 app.use(cors());
 
 let apis = null;
-const MAX_API_WAIT_TIME = 3000; 
+const MAX_API_WAIT_TIME = 3000;
 const MAX_TIME = 10000;
 
+// Function to fetch APIs - made more robust for Vercel's stateless nature
 async function getapis() {
     try {
+        // You might want to cache this response more aggressively in a real app,
+        // but for a simple demo, re-fetching is fine.
         const response = await axios.get('https://wtserver.glitch.me/apis');
         apis = response.data;
         console.log('データを取得しました:', apis);
     } catch (error) {
         console.error('データの取得に失敗しました:', error);
+        apis = null; // Ensure apis is null on failure
     }
 }
+
+// Initial fetch when the function starts (can be infrequent on Vercel)
+// In a serverless environment, this might run on each cold start.
+// For better performance, consider a persistent caching mechanism if 'apis' changes infrequently.
+getapis();
 
 async function ggvideo(videoId) {
   const startTime = Date.now();
   const instanceErrors = new Set();
-    
-  for (let i = 0; i < 20; i++) {
-    if (Math.floor(Math.random() * 20) === 0) {
-        await getapis();
+
+  // Ensure apis are available, fetch if not
+  if (!apis) {
+    await getapis();
+    if (!apis) {
+        throw new Error("APIリストの取得に失敗しました。");
     }
   }
-  if(!apis){
-    await getapis();
-  }
 
-  for (const instance of apis) {
+  // Shuffle apis to distribute load and try different ones
+  const shuffledApis = [...apis].sort(() => 0.5 - Math.random());
+
+  for (const instance of shuffledApis) {
     try {
       const response = await axios.get(`${instance}/api/v1/videos/${videoId}`, { timeout: MAX_API_WAIT_TIME });
       console.log(`使ってみたURL: ${instance}/api/v1/videos/${videoId}`);
-      
+
       if (response.data && response.data.formatStreams) {
-        return response.data; 
+        return response.data;
       } else {
         console.error(`formatStreamsが存在しない: ${instance}`);
       }
@@ -76,6 +74,7 @@ async function ggvideo(videoId) {
   throw new Error("動画を取得する方法が見つかりません");
 }
 
+// Routes
 app.get('/', (req, res) => {
     res.sendStatus(200);
 });
@@ -97,25 +96,28 @@ app.get(['/api/:id', '/api/login/:id'], async (req, res) => {
   const videoId = req.params.id;
   try {
     const videoInfo = await ggvideo(videoId);
-    
+
+    // Prioritize high quality streams, then fall back to others
     const formatStreams = videoInfo.formatStreams || [];
-    const streamUrl = formatStreams.reverse().map(stream => stream.url)[0];
-    
-    const audioStreams = videoInfo.adaptiveFormats || [];
-    
-    let highstreamUrl = audioStreams
+    const streamUrl = formatStreams.reverse().map(stream => stream.url)[0]; // Simplistic, might need more robust logic
+
+    const adaptiveFormats = videoInfo.adaptiveFormats || [];
+
+    let highstreamUrl = adaptiveFormats
       .filter(stream => stream.container === 'webm' && stream.resolution === '1080p')
-      .map(stream => stream.url)[0];
-    const audioUrl = audioStreams
+      .map(stream => stream.url)[0] || ''; // Ensure it's not undefined
+
+    const audioUrl = adaptiveFormats
       .filter(stream => stream.container === 'm4a' && stream.audioQuality === 'AUDIO_QUALITY_MEDIUM')
-      .map(stream => stream.url)[0];
-    const streamUrls = audioStreams
+      .map(stream => stream.url)[0] || ''; // Ensure it's not undefined
+
+    const streamUrls = adaptiveFormats
       .filter(stream => stream.container === 'webm' && stream.resolution)
       .map(stream => ({
         url: stream.url,
         resolution: stream.resolution,
       }));
-    
+
     const templateData = {
       stream_url: streamUrl,
       highstreamUrl: highstreamUrl,
@@ -130,24 +132,16 @@ app.get(['/api/:id', '/api/login/:id'], async (req, res) => {
       likeCount: videoInfo.likeCount,
       streamUrls: streamUrls
     };
-          
+
     res.json(templateData);
   } catch (error) {
-        res.status(500).render('matte', { 
-      videoId, 
-      error: '動画を取得できません', 
-      details: error.message 
-    });
+        console.error(`動画情報取得エラー: ${error.message}`);
+        res.status(500).json({
+            error: '動画を取得できません',
+            details: error.message
+        });
   }
 });
 
-function streamurlchange(url) {
-  try {
-    const urlObj = new URL(url);
-    urlObj.searchParams.delete('host');
-    return urlObj.toString();
-  } catch (error) {
-    console.error('URLが無効です:', url);
-    return url;
-  }
-          }
+// Export the app for Vercel
+module.exports = app;
