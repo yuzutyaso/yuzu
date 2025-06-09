@@ -1,9 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
     const youtubeUrlInput = document.getElementById('youtube-url');
     const loadVideoButton = document.getElementById('load-video');
-    const searchQueryInput = document.getElementById('search-query'); // 追加
-    const searchVideoButton = document.getElementById('search-video'); // 追加
-    const searchResultsDiv = document.getElementById('search-results'); // 追加
+    const searchQueryInput = document.getElementById('search-query');
+    const searchVideoButton = document.getElementById('search-video');
+    const searchResultsDiv = document.getElementById('search-results');
 
     const videoElement = document.getElementById('video-element');
     const videoTitle = document.getElementById('video-title');
@@ -18,7 +18,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // 数値をカンマ区切りでフォーマットするヘルパー関数
     const formatNumber = (num) => {
         if (num === null || num === undefined) return 'N/A';
-        return parseInt(num).toLocaleString();
+        // 数値でない場合は文字列を解析して数値に変換
+        if (typeof num === 'string') {
+            num = parseInt(num.replace(/,/g, ''), 10);
+            if (isNaN(num)) return 'N/A';
+        }
+        return num.toLocaleString();
     };
 
     // 動画情報をリセットするヘルパー関数
@@ -33,12 +38,13 @@ document.addEventListener('DOMContentLoaded', () => {
         channelImage.src = '';
         channelImage.style.display = 'none';
         qualitySelector.innerHTML = '';
-        errorMessage.textContent = ''; // エラーメッセージもクリア
+        errorMessage.textContent = '';
     }
 
     // 特定の動画IDで動画情報を読み込む関数
     async function loadVideoById(videoId) {
         resetVideoInfo(); // まず表示をクリア
+        searchResultsDiv.innerHTML = ''; // 検索結果もクリア
 
         try {
             const response = await fetch(`/api/${videoId}`);
@@ -53,6 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
             channelName.textContent = data.channelName || '不明なチャンネル';
             videoViews.textContent = formatNumber(data.videoViews);
             likeCount.textContent = formatNumber(data.likeCount);
+            // Invidiousのdescriptionは改行コードが含まれる場合があるので変換
             videoDescription.innerHTML = data.videoDes ? data.videoDes.replace(/\n/g, '<br>') : '説明なし';
             if (data.channelImage) {
                 channelImage.src = data.channelImage;
@@ -63,6 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 品質選択ボタンを生成
             qualitySelector.innerHTML = '';
+            // デフォルトのストリームを設定
             if (data.stream_url) {
                 videoElement.src = data.stream_url;
                 videoElement.load();
@@ -74,6 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 qualitySelector.appendChild(defaultButton);
             }
 
+            // 1080pの動画のみストリームがあれば追加
             if (data.highstreamUrl) {
                 const highResButton = document.createElement('button');
                 highResButton.textContent = '1080p (動画のみ)';
@@ -82,16 +91,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 qualitySelector.appendChild(highResButton);
             }
 
+            // その他の動画のみの解像度ストリームがあれば追加
+            // uniqueな解像度を保持
+            const uniqueVideoOnlyQualities = new Set();
             data.videoOnlyStreamUrls.forEach(stream => {
-                if (stream.url !== data.highstreamUrl && stream.resolution && stream.url) {
+                // 既に1080pボタンがあれば追加しない
+                if (stream.resolution === '1080p' && data.highstreamUrl) return;
+                // 重複する解像度を追加しない
+                if (uniqueVideoOnlyQualities.has(stream.resolution)) return;
+
+                if (stream.url && stream.resolution) {
                     const button = document.createElement('button');
                     button.textContent = `${stream.resolution} (動画のみ)`;
                     button.dataset.url = stream.url;
                     button.dataset.type = 'video-only';
                     qualitySelector.appendChild(button);
+                    uniqueVideoOnlyQualities.add(stream.resolution);
                 }
             });
 
+
+            // 音声のみストリームがあれば追加
             if (data.audioUrl) {
                 const audioButton = document.createElement('button');
                 audioButton.textContent = '音声のみ';
@@ -100,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 qualitySelector.appendChild(audioButton);
             }
 
+            // 品質ボタンのクリックイベントリスナー
             qualitySelector.addEventListener('click', (event) => {
                 if (event.target.tagName === 'BUTTON') {
                     const selectedUrl = event.target.dataset.url;
@@ -118,11 +139,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             errorMessage.textContent = `エラー: ${error.message}`;
             console.error('動画情報の取得に失敗しました:', error);
-            resetVideoInfo(); // エラー時はすべてクリア
+            resetVideoInfo();
         }
     }
 
-    // URL入力ボタンのイベントリスナー（既存）
+    // URL入力ボタンのイベントリスナー
     loadVideoButton.addEventListener('click', async () => {
         const fullUrl = youtubeUrlInput.value;
         if (!fullUrl) {
@@ -133,14 +154,21 @@ document.addEventListener('DOMContentLoaded', () => {
         let videoId;
         try {
             const url = new URL(fullUrl);
-            if (url.hostname.includes('youtube.com') || url.hostname.includes('youtu.be')) {
-                if (url.hostname.includes('youtube.com')) {
-                    videoId = url.searchParams.get('v');
-                } else if (url.hostname.includes('youtu.be')) {
-                    videoId = url.pathname.substring(1);
-                }
+            // YouTubeの標準的なURL形式に対応
+            if (url.hostname.includes('youtube.com')) {
+                videoId = url.searchParams.get('v');
+            } else if (url.hostname.includes('youtu.be')) { // youtu.be 短縮URL
+                videoId = url.pathname.substring(1);
             } else {
-                videoId = fullUrl.match(/^[a-zA-Z0-9_-]{11}$/) ? fullUrl : null; // 直接ID入力の場合
+                // 直接動画IDが入力された場合や、InvidiousインスタンスのURLの場合も考慮
+                videoId = fullUrl.match(/^[a-zA-Z0-9_-]{11}$/) ? fullUrl : null;
+                // Invidious URLから動画IDを抽出
+                if (!videoId) {
+                    const invidiousMatch = fullUrl.match(/^(?:https?:\/\/[a-zA-Z0-9.-]+\/watch\?v=|https?:\/\/[a-zA-Z0-9.-]+\/latest\/)?([a-zA-Z0-9_-]{11})$/);
+                    if (invidiousMatch) {
+                        videoId = invidiousMatch[1];
+                    }
+                }
             }
 
             if (!videoId) {
@@ -154,7 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadVideoById(videoId); // 動画IDで読み込む関数を呼び出す
     });
 
-    // 検索ボタンのイベントリスナー（新規）
+    // 検索ボタンのイベントリスナー
     searchVideoButton.addEventListener('click', async () => {
         const query = searchQueryInput.value.trim();
         if (!query) {
@@ -185,10 +213,13 @@ document.addEventListener('DOMContentLoaded', () => {
             videos.forEach(video => {
                 const itemDiv = document.createElement('div');
                 itemDiv.classList.add('search-result-item');
-                itemDiv.dataset.videoId = video.id; // 動画IDをカスタムデータ属性として保存
+                itemDiv.dataset.videoId = video.id;
+
+                // サムネイルURLをより確実に取得する（配列の最初の要素など）
+                const thumbnailUrl = video.thumbnails && video.thumbnails.length > 0 ? video.thumbnails[0].url : '';
 
                 itemDiv.innerHTML = `
-                    <img src="${video.thumbnails ? video.thumbnails[0].url : ''}" alt="${video.title}">
+                    <img src="${thumbnailUrl}" alt="${video.title}">
                     <div class="search-result-info">
                         <h3>${video.title}</h3>
                         <p>チャンネル: ${video.author}</p>
@@ -198,12 +229,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
                 searchResultsDiv.appendChild(itemDiv);
 
-                // 検索結果アイテムクリックで動画を読み込む
                 itemDiv.addEventListener('click', () => {
                     loadVideoById(video.id);
                     // 検索結果をクリアして、検索クエリをURL欄にコピー（任意）
-                    youtubeUrlInput.value = video.url;
-                    searchResultsDiv.innerHTML = '';
+                    youtubeUrlInput.value = `youtube.com?v=${video.id}`; // 標準YouTube URLとして表示
+                    searchResultsDiv.innerHTML = ''; // 検索結果を非表示
                 });
             });
 
