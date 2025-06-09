@@ -1,4 +1,0 @@
-Flask
-yt-dlp
-youtube-playlist-parser 
-ytsr
