@@ -19,12 +19,7 @@ app.use(cors());
 // シンプルさのためここでは固定リストで管理します。
 // 動作しなくなったらここを更新してください。
 let invidiousInstances = [
-    'https://inv.vern.cc',
-    'https://vid.priv.no',
-    'https://invidious.projectsegfau.lt',
-    // 他にも安定したインスタンスがあれば追加してください
-    // 例: 'https://invidious.privacydev.net',
-    // 起動時にリストを取得する場合は、getapis()のような関数を実装することも可能です。
+  'https://lekker.gay',
 ];
 const INSTANCE_CHECK_TIMEOUT = 5000; // インスタンスチェックのタイムアウト (ms)
 const MAX_REQUEST_TIMEOUT = 10000; // APIリクエスト全体のタイムアウト (ms)
